@@ -1,66 +1,101 @@
 import streamlit as st
+import re
 import pandas as pd
-import numpy as np
-from bs4 import BeautifulSoup
+import matplotlib.pyplot as plt
 
-st.title("⚽ Football AI Ultimate Predictor")
+st.set_page_config(page_title="Football Analyzer", layout="wide")
+st.title("محلل مباريات كرة القدم - RedScores")
+st.markdown("الصق نص RedScores كاملاً لتحليل المباريات والإحصائيات")
 
-# رفع ملف HTML
-uploaded_file = st.file_uploader("ارفع ملف HTML للإحصائيات", type="html")
+# --- إدخال النص ---
+input_text = st.text_area("Paste RedScores Text Here", height=600)
 
-def extract_tables(html_content):
-    soup = BeautifulSoup(html_content, 'html5lib')  # استخدام html5lib لتجنب مشاكل lxml
-    tables = soup.find_all('table')
-    dfs = []
-    for table in tables:
-        try:
-            df = pd.read_html(str(table))[0]
-            dfs.append(df)
-        except:
-            continue
-    return dfs
+def extract_matches(text):
+    """
+    استخراج المباريات من النص مع الفريقين والوقت والنتيجة.
+    """
+    # نمط للتعرف على المباريات: فريق1 - فريق2
+    matches_pattern = re.compile(r"(\d{1,2}:\d{2})\s+([A-Za-z\s&]+)\s+([A-Za-z\s&]+)")
+    matches = matches_pattern.findall(text)
+    
+    # قائمة المباريات المستخرجة
+    data = []
+    for match in matches:
+        time, team1, team2 = match
+        data.append({"Time": time, "Team1": team1.strip(), "Team2": team2.strip()})
+    return pd.DataFrame(data)
 
-def analyze_matches(df):
-    result = {}
-    # التحقق من الأعمدة الشائعة
-    if 'HomeScore' in df.columns and 'AwayScore' in df.columns:
-        home_goals = df['HomeScore'].sum()
-        away_goals = df['AwayScore'].sum()
-        result['HomeGoals'] = home_goals
-        result['AwayGoals'] = away_goals
-        result['TotalGoals'] = home_goals + away_goals
-    return result
+def extract_results(text, team_name):
+    """
+    استخراج آخر نتائج فريق محدد (آخر 6 مباريات).
+    """
+    pattern = re.compile(
+        rf"(\d{{1,2}}\.\d{{1,2}}).*?\n{team_name}\n([A-Za-z\s&]+)\n([0-9\-: ]+)", 
+        re.MULTILINE
+    )
+    matches = pattern.findall(text)
+    results = []
+    for date, opponent, score in matches:
+        results.append({"Date": date, "Opponent": opponent.strip(), "Score": score.strip()})
+    return pd.DataFrame(results[-6:])  # آخر 6 مباريات
 
-def predict_outcome(df):
-    # تحليل مبسط بناءً على آخر 6 مباريات لكل فريق
-    last_games = df.tail(6)
-    home_avg = last_games['HomeScore'].mean() if 'HomeScore' in df.columns else 0
-    away_avg = last_games['AwayScore'].mean() if 'AwayScore' in df.columns else 0
-    prediction = ""
-    if home_avg > away_avg:
-        prediction = "الفريق الأول مرشح للفوز"
-    elif away_avg > home_avg:
-        prediction = "الفريق الثاني مرشح للفوز"
-    else:
-        prediction = "نتيجة متقاربة، التعادل محتمل"
-    return prediction
+def extract_standings(text):
+    """
+    استخراج جدول الدوري و إحصائيات الفريق.
+    """
+    pattern = re.compile(r"#\s*(\d+)\.\s*([A-Za-z\s&]+)\s+[A-Za-z\s&]+\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d:]+)\s+(\d+)")
+    matches = pattern.findall(text)
+    data = []
+    for m in matches:
+        rank, team, mp, w, d, l, gd, pts = m
+        data.append({
+            "Rank": int(rank), "Team": team.strip(), "MP": int(mp), "W": int(w),
+            "D": int(d), "L": int(l), "GD": gd, "Pts": int(pts)
+        })
+    return pd.DataFrame(data)
 
-if uploaded_file:
-    html_content = uploaded_file.read()
-    dfs = extract_tables(html_content)
-    if dfs:
-        st.success(f"تم العثور على {len(dfs)} جدول في الملف.")
-        for i, df in enumerate(dfs):
-            st.subheader(f"جدول {i+1}")
-            st.dataframe(df)
+if input_text:
+    st.subheader("المباريات المكتشفة")
+    matches_df = extract_matches(input_text)
+    st.dataframe(matches_df)
 
-            analysis = analyze_matches(df)
-            if analysis:
-                st.write(f"مجموع أهداف الفريق الأول: {analysis.get('HomeGoals',0)}")
-                st.write(f"مجموع أهداف الفريق الثاني: {analysis.get('AwayGoals',0)}")
-                st.write(f"مجموع أهداف المباراة: {analysis.get('TotalGoals',0)}")
-                st.write("التوقع:", predict_outcome(df))
-            else:
-                st.warning("لا يمكن تحليل هذا الجدول. تأكد من أن الأعمدة موجودة (HomeScore, AwayScore).")
-    else:
-        st.warning("لم يتم العثور على أي جداول في الملف.")
+    # اختيار الفريق للتحليل
+    team_selected = st.selectbox("اختر الفريق لتحليل آخر 6 مباريات", matches_df["Team1"].unique())
+    last_results = extract_results(input_text, team_selected)
+    
+    st.subheader(f"آخر 6 مباريات لفريق {team_selected}")
+    st.dataframe(last_results)
+
+    st.subheader("جدول ترتيب الدوري (إن وجد)")
+    standings_df = extract_standings(input_text)
+    if not standings_df.empty:
+        st.dataframe(standings_df)
+    
+    # --- تحليل الرسوم البيانية ---
+    st.subheader("تحليل الأهداف آخر 6 مباريات")
+    if not last_results.empty:
+        goals_for = []
+        goals_against = []
+        for s in last_results["Score"]:
+            try:
+                t1, t2 = re.findall(r'\d+', s)
+                goals_for.append(int(t1))
+                goals_against.append(int(t2))
+            except:
+                goals_for.append(0)
+                goals_against.append(0)
+        fig, ax = plt.subplots()
+        ax.plot(last_results["Date"], goals_for, label="أهداف الفريق")
+        ax.plot(last_results["Date"], goals_against, label="أهداف الخصم")
+        ax.set_ylabel("عدد الأهداف")
+        ax.set_xlabel("التاريخ")
+        ax.legend()
+        st.pyplot(fig)
+
+    st.subheader("تحليل Over/Under و BTTS (تقريبي من النتائج الأخيرة)")
+    over_1_5 = sum((gf+ga)>=2 for gf, ga in zip(goals_for, goals_against))/len(goals_for)*100
+    over_2_5 = sum((gf+ga)>=3 for gf, ga in zip(goals_for, goals_against))/len(goals_for)*100
+    btts = sum((gf>0 and ga>0) for gf, ga in zip(goals_for, goals_against))/len(goals_for)*100
+    st.write(f"احتمالية Over 1.5 أهداف: {over_1_5:.1f}%")
+    st.write(f"احتمالية Over 2.5 أهداف: {over_2_5:.1f}%")
+    st.write(f"احتمالية BTTS (كلا الفريقين يسجل): {btts:.1f}%")
