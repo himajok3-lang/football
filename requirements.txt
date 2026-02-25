@@ -2,9 +2,5 @@ streamlit==1.54.0
 beautifulsoup4==4.12.2
 html5lib==1.1
 pandas==2.3.3
-numpy==1.26.3
+numpy==2.4.2
 matplotlib==3.8.0
-torch==2.1.0+cpu
-torchvision==0.26.0+cpu
-torchaudio==2.1.0+cpu
--f https://download.pytorch.org/whl/cpu/torch_stable.html
