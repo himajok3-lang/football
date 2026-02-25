@@ -1,6 +1,6 @@
-streamlit
-torch
-torchvision
-torchaudio
-numpy
-pandas
+streamlit==1.27.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+pandas==2.1.1
+numpy==1.26.3
+matplotlib==3.8.0
